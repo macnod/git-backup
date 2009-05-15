@@ -1,4 +1,5 @@
 #!/usr/bin/perl
+
 use MooseX::Declare;
 
 class SinisterCodeBackup {
