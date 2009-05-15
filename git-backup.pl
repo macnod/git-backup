@@ -3,6 +3,7 @@
 use MooseX::Declare;
 
 class SinisterCodeBackup {
+
   has date => (isa => 'Str', is => 'ro', default => localtime);
   has folder => (isa => 'Str', is => 'rw');
 
