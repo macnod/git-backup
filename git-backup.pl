@@ -4,10 +4,11 @@ use MooseX::Declare;
 
 class SinisterCodeBackup {
 
-  has date => (isa => 'Str', is => 'ro', default => localtime);
+  has date => (isa => 'Str', is => 'rw');
   has folder => (isa => 'Str', is => 'rw');
 
   method run {
+    $self->date(scalar localtime);
     chdir $self->folder or
       die "Can't change into directory '", $self->folder, "'.";
     my $folder= $self->folder;
@@ -57,7 +58,7 @@ class SinisterCodeBackup {
   method mark_new_files {`git add .`}
 
   method commit_all_changes {
-    my $date= localtime;
+    my $date= $self->date;
     `git commit -a -m "Commiting sinistercode backup for $date"`}
 
   method push_backup {`git push`}
