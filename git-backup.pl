@@ -2,18 +2,29 @@
 
 use MooseX::Declare;
 
-class SinisterCodeBackup {
+class GitBackup {
 
+  # Constructor's named parameters
+  has log => (isa => 'Str', is => 'rw');
+  has working_copy => (isa => 'Str', is => 'rw', required => 1);
+  has folders => (isa => 'HashRef', is => 'ro', required => 1);
+  has db_username => (isa => 'Str', is => 'ro', required => 1);
+  has db_password => (isa => 'Str', is => 'ro', required => 1);
+  has mail_dear => (isa => 'Str', is => 'ro', default => "Sir or Madam");
+  has mail_signed => (isa => 'Str', is => 'ro', default => "git-backup.pl");
+  has mail_to => (isa => 'Str', is => 'ro', required => 1);
+  has mail_from => (isa => 'Str', is => 'ro', required => 1);
+  has mail_backed_up_host => (isa => 'Str', is => 'ro', required => 1);
+
+  # Other attributes
   has date => (isa => 'Str', is => 'rw');
-  has folder => (isa => 'Str', is => 'rw');
 
   method run {
     $self->date(scalar localtime);
-    chdir $self->folder or
-      die "Can't change into directory '", $self->folder, "'.";
-    my $folder= $self->folder;
-    $self->delete_working_copy_files($self->folders);
-    $self->copy_files_to_working_copy($self->folders);
+    chdir $self->working_copy or
+      die "Can't change into directory '", $self->working_copy, "'.";
+    $self->delete_working_copy_files;
+    $self->copy_files_to_working_copy;
     $self->mysqldump;
     $self->mark_deletes;
     $self->mark_new_files;
@@ -22,28 +33,31 @@ class SinisterCodeBackup {
     $self->mail_push_notice;
   }
 
-  method folders {(
-    sites => '/www/dk2/html/sites/*',
-    'cjr-html' => '/www/cjr/html/*'
-  )}
-
-  method delete_working_copy_files (%folders) {
-    for my $folder (keys %folders) {`rm -Rf $folder`}
+  method delete_working_copy_files {
+    for my $folder (keys %{$self->folders}) {`rm -Rf $folder`}
   }
 
-  method copy_files_to_working_copy (%folders) {
-    my ($source, $target);
-    for my $folder (keys %folders) {
-      `rm -Rf $folder`;
-      `mkdir $folder`;
-      `cp -RL --no-preserve=mode,ownership $folders{$folder} $folder`;
+  method copy_files_to_working_copy {
+    my ($source, $target, $folder, $subfolder, $find);
+    for $folder (keys %{$self->folders}) {
+      `/bin/rm -Rf $folder`;
+      `/bin/mkdir $folder`;
+      for $subfolder
+        (ref($self->folders->{$folder}) ?
+         @{$self->folders->{$folder}} : $self->folders->{$folder})
+        {`/bin/cp -RL --no-preserve=mode,ownership $subfolder $folder`}
+      $find= "/usr/bin/find $folder";
+      `$find -type f -executable -exec /bin/chmod 755 "{}" \\;`;
+      `$find -type f ! -executable -exec /bin/chmod 644 "{}" \\;`;
+      `$find -type d -exec /bin/chmod 755 "{}" \\;`;
     }
   }
 
   method mysqldump {
-    my $credentials= "-u root --password=XXXXXXXXX";
+    my $credentials= "-u " . $self->db_username .
+      " --password=" . $self->db_password;
     my $options= "-A --create-options";
-    `mysqldump $credentials $options >sinistercode-mysql-backup-sql`;
+    `/usr/bin/mysqldump $credentials $options >mysql-backup.sql`;
   }
 
   method mark_deletes {
@@ -53,29 +67,43 @@ class SinisterCodeBackup {
     grep {$_ ne ''}
       map {/^#\s+deleted:\s+([^ ]+)$/; $_= $1; s/^\s+|\s+$//sg; $_}
         grep {/^#\s+deleted:\s+/sg}
-          `git status`}
+          `/usr/bin/git status`}
 
-  method mark_new_files {`git add .`}
+  method mark_new_files {`/usr/bin/git add .`}
 
   method commit_all_changes {
     my $date= $self->date;
-    `git commit -a -m "Commiting sinistercode backup for $date"`}
+    `/usr/bin/git commit -a -m "Commiting sinistercode backup for $date"`}
 
   method push_backup {`git push`}
 
   method mail_push_notice {
     open(MAIL, '| /usr/lib/sendmail -t -oi') or die "Can't send mail.";
     print MAIL
-      "To: donnie\@solomonstreet.com\n",
-      "From: sinistercode.com <noreply\@sinistercode.com>\n",
+      "To: ", $self->mail_to, "\n",
+      "From: ", $self->mail_from, "\n",
       "Subject: Updated sinistercode backup repository\n\n",
-      "Captain, Your Highness, Master of the World, Donnie,\n\n",
-      "I have updated the sinistercode backup repository with ",
-      "the latest changes, according to your excellent program.\n\n",
-      "I remain faithfully at your service forever,\n\n",
-      "--sinistercode.com\n";
+      "Dear ", $self->mail_dear, ",\n\n",
+      "I have updated the backup repository with the latest changes in ",
+      $self->mail_backed_up_host, "\n\n",
+      "--", $self->mail_signed;
     close MAIL;
   }
 }
 
-SinisterCodeBackup->new(folder => "/www/dk2/backup-2/files")->run
+GitBackup->new(
+  log => '/home/webmaster/log/webapps-backup.log',
+  working_copy => '/backup/sinistercode-webapps',
+  folders => +{
+    # New home for folders and files      Folders and files to back up
+    'drupal-sites' =>                     '/www/drupal/sites/*',
+    'wordpress-sites' =>                  '/www/cjanerock.com/*',
+  },
+  db_username => 'root',
+  db_password => 'xxxxxxxxxxxx',
+  mail_dear => 'Donnie',
+  mail_signed => 'donnieknows.com',
+  mail_to => 'donnie@solomonstreet.com',
+  mail_from => 'donnieknows.com <no-reply@donnieknows.com>',
+  mail_backed_up_host => 'donnieknows.com'
+)->run;
